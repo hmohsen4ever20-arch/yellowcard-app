@@ -89,7 +89,7 @@
       <div class="flex flex-col md:flex-row md:items-center justify-between gap-2 border-b border-slate-800 pb-3">
         <div>
           <h2 class="text-sm md:text-base font-extrabold text-yellow-400 uppercase tracking-wide">1. Automated League Database & Weekly Batch Predictor</h2>
-          <p class="text-xs text-slate-400 mt-0.5">Select any European league to compute Bayesian team aggression, referee strictness, and match card probabilities:</p>
+          <p class="text-xs text-slate-400 mt-0.5">Select any European league to compute Bayesian team aggression, referee strictness, and upcoming match card probabilities:</p>
         </div>
         <span id="statusText" class="text-xs text-emerald-400 font-bold">Loading dataset...</span>
       </div>
@@ -160,17 +160,25 @@
         </div>
       </div>
 
-      <!-- Batch Predictions Table -->
-      <div class="space-y-2">
-        <div class="flex flex-col md:flex-row md:items-center justify-between gap-1">
-          <h3 id="tableTitle" class="text-sm font-bold text-white">Weekly Match Predictions & Backtest Table</h3>
-          <span class="text-[11px] text-slate-400">Tap "Calibrate" on any match to unlock its exact parameters in the 6-Factor Simulator</span>
+      <!-- Batch Predictions Table with Upcoming / Backtest Switch Tabs -->
+      <div class="space-y-3">
+        <div class="flex flex-col md:flex-row md:items-center justify-between gap-2">
+          <div class="flex flex-wrap items-center gap-2">
+            <button id="tabUpcoming" onclick="switchViewMode('upcoming')" class="px-3.5 py-2 rounded-xl text-xs font-extrabold transition bg-emerald-500 text-slate-950 shadow">
+              📅 Upcoming Fixtures (<span id="cntUpcoming">0</span>)
+            </button>
+            <button id="tabPlayed" onclick="switchViewMode('played')" class="px-3.5 py-2 rounded-xl text-xs font-bold transition bg-slate-900 text-slate-300 border border-slate-700 hover:bg-slate-800">
+              📊 Recent Played (<span id="cntPlayed">0</span>)
+            </button>
+          </div>
+          <span id="tableTitle" class="text-xs text-slate-400 font-medium">Tap "Calibrate" on any match to unlock its exact parameters below</span>
         </div>
+
         <div class="overflow-x-auto rounded-xl border border-slate-800">
           <table class="w-full text-left text-xs">
             <thead class="bg-slate-900 text-slate-300 border-b border-slate-800 uppercase text-[11px]">
               <tr>
-                <th class="p-2.5">Div</th>
+                <th class="p-2.5">Div / Date</th>
                 <th class="p-2.5">Matchup (Home vs Away)</th>
                 <th class="p-2.5">Referee (Strictness)</th>
                 <th class="p-2.5">Team Aggression</th>
@@ -180,7 +188,7 @@
                 <th class="p-2.5">Over 3.5</th>
                 <th class="p-2.5">Over 4.5</th>
                 <th class="p-2.5">Red Prob</th>
-                <th class="p-2.5">Actual</th>
+                <th class="p-2.5">Status / Actual</th>
                 <th class="p-2.5 text-center">Action</th>
               </tr>
             </thead>
@@ -349,7 +357,6 @@
   <script>
     const ADSTERRA_DIRECT_LINK = "https://asiafilm.org/4/052064ca4ffd0916d363a8d4ca962a64";
 
-    // Multi-mirror setup: CDN -> GitHub Pages -> GitHub Raw -> Local APK bundle
     const DATA_MIRRORS = [
       { name: 'jsDelivr CDN', url: 'https://cdn.jsdelivr.net/gh/frankalayari-beep/card_app@main/data', local: false },
       { name: 'GitHub Pages', url: 'https://frankalayari-beep.github.io/card_app/data', local: false },
@@ -358,7 +365,7 @@
     ];
 
     let preferredMirrorIndex = 0;
-    let db = { avg: 4.16, foulsAvg: 22.8, divAvg: {}, teams: {}, refs: {}, list: [] };
+    let db = { avg: 4.16, foulsAvg: 22.8, divAvg: {}, teams: {}, refs: {}, upcomingList: [], playedList: [], list: [], viewMode: 'upcoming' };
     let adTimerInterval = null;
     let pendingAdCallback = null;
 
@@ -424,6 +431,27 @@
       fetchRepoLeague(code);
     }
 
+    function switchViewMode(mode) {
+      db.viewMode = mode;
+      const upBtn = document.getElementById('tabUpcoming');
+      const plBtn = document.getElementById('tabPlayed');
+
+      if (mode === 'upcoming') {
+        upBtn.className = 'px-3.5 py-2 rounded-xl text-xs font-extrabold transition bg-emerald-500 text-slate-950 shadow';
+        plBtn.className = 'px-3.5 py-2 rounded-xl text-xs font-bold transition bg-slate-900 text-slate-300 border border-slate-700 hover:bg-slate-800';
+        db.list = [...db.upcomingList];
+        document.getElementById('tableTitle').innerText = db.list.length
+          ? `Next Week Predictions (${db.list.length} upcoming matches based on current season stats)`
+          : 'No upcoming fixtures scheduled right now — switch to Recent Played tab';
+      } else {
+        plBtn.className = 'px-3.5 py-2 rounded-xl text-xs font-extrabold transition bg-yellow-500 text-slate-950 shadow';
+        upBtn.className = 'px-3.5 py-2 rounded-xl text-xs font-bold transition bg-slate-900 text-slate-300 border border-slate-700 hover:bg-slate-800';
+        db.list = [...db.playedList];
+        document.getElementById('tableTitle').innerText = `Last Matchday Verification (${db.list.length} completed matches)`;
+      }
+      sortAndRender();
+    }
+
     const FALLBACK_CSV = `Div,Date,HomeTeam,AwayTeam,Referee,HF,AF,HY,AY,B365H,B365A
 SP1,10/2026,Sevilla,Getafe,Diaz de Mera,16,18,4,5,2.40,3.20
 SP1,10/2026,Getafe,Rayo Vallecano,Sanchez Martinez,18,16,5,4,2.50,3.00
@@ -463,12 +491,12 @@ F1,10/2026,Marseille,Lille,Clement Turpin,14,15,3,3,2.30,3.10`;
       return res;
     }
 
-    // Parse each CSV independently with its own header to avoid column-shift bugs across leagues/fixtures
     function extractMatchesFromCSV(csvText, allowedDivs = null, startIndex = 0) {
       const rows = csvText.replace(/^\uFEFF/, '').trim().split(/\r?\n/);
       if (rows.length < 2) return [];
       const cols = parseLine(rows[0]).map(c => c.trim());
       const iDiv = cols.indexOf('Div');
+      const iDate = cols.indexOf('Date');
       const iH = cols.indexOf('HomeTeam');
       const iA = cols.indexOf('AwayTeam');
       if (iH === -1 || iA === -1) return [];
@@ -488,6 +516,7 @@ F1,10/2026,Marseille,Lille,Clement Turpin,14,15,3,3,2.30,3.10`;
         const div = iDiv !== -1 ? (v[iDiv] || 'ALL').trim() : 'ALL';
         if (allowedDivs && !allowedDivs.includes(div)) return;
 
+        const date = iDate !== -1 ? (v[iDate] || '').trim() : '';
         const h = (v[iH] || '').trim();
         const a = (v[iA] || '').trim();
         if (!h || !a) return;
@@ -507,7 +536,7 @@ F1,10/2026,Marseille,Lille,Clement Turpin,14,15,3,3,2.30,3.10`;
           else if (d >= 0.42) { close = 0.82; closeLbl = 'Lopsided (-18%)'; }
         }
 
-        out.push({ idx: startIndex + idx, div, h, a, rf, hy, ay, hf, af, close, closeLbl });
+        out.push({ idx: startIndex + idx, div, date, h, a, rf, hy, ay, hf, af, close, closeLbl });
       });
       return out;
     }
@@ -570,15 +599,13 @@ F1,10/2026,Marseille,Lille,Clement Turpin,14,15,3,3,2.30,3.10`;
 
     async function fetchRepoLeague(code) {
       const st = document.getElementById('statusText');
-      st.innerText = `Syncing ${code} data...`;
+      st.innerText = `Syncing ${code} data & upcoming fixtures...`;
       const codes = code === 'ALL' ? ['SP1', 'E0', 'I1', 'D1', 'F1'] : [code];
 
-      // Fetch sync timestamp
       fetchFromMirrors('last_updated.txt').then(tRes => {
         if (tRes) document.getElementById('lastSyncBadge').innerText = `| Updated: ${tRes.text}`;
       });
 
-      // Fetch requested leagues + fixtures in parallel
       const leaguePromises = codes.map(c => fetchFromMirrors(`${c}.csv`, 'HomeTeam'));
       const fixturePromise = fetchFromMirrors('fixtures.csv', 'HomeTeam');
 
@@ -616,7 +643,7 @@ F1,10/2026,Marseille,Lille,Clement Turpin,14,15,3,3,2.30,3.10`;
         if (!isNaN(m.hy) && !isNaN(m.ay)) {
           const y = m.hy + m.ay;
           const hasF = (!isNaN(m.hf) && !isNaN(m.af));
-          played.push({ idx: m.idx, div: m.div, h: m.h, a: m.a, rf: m.rf, y, close: m.close, closeLbl: m.closeLbl });
+          played.push({ idx: m.idx, div: m.div, date: m.date, h: m.h, a: m.a, rf: m.rf, y, close: m.close, closeLbl: m.closeLbl });
           totalY += y;
           if (hasF) { totalF += (m.hf + m.af); foulGames++; }
 
@@ -628,7 +655,7 @@ F1,10/2026,Marseille,Lille,Clement Turpin,14,15,3,3,2.30,3.10`;
             refs[m.rf] = refs[m.rf] || { g: 0, c: 0 }; refs[m.rf].g++; refs[m.rf].c += y;
           }
         } else {
-          upcoming.push({ idx: m.idx, div: m.div, h: m.h, a: m.a, rf: m.rf, y: null, close: m.close, closeLbl: m.closeLbl });
+          upcoming.push({ idx: m.idx, div: m.div, date: m.date, h: m.h, a: m.a, rf: m.rf, y: null, close: m.close, closeLbl: m.closeLbl });
         }
       });
 
@@ -662,7 +689,7 @@ F1,10/2026,Marseille,Lille,Clement Turpin,14,15,3,3,2.30,3.10`;
       document.getElementById('kpiFouls').innerText = fAvg.toFixed(1);
       document.getElementById('kpiTeam').innerText = topT;
       document.getElementById('kpiRef').innerText = topR;
-      document.getElementById('statusText').innerText = `Source: ${sourceLabel} (${played.length} matches)`;
+      document.getElementById('statusText').innerText = `Source: ${sourceLabel} (${played.length} played | ${upcoming.length} upcoming)`;
 
       const opt = document.getElementById('csvLeagueOpt');
       opt.value = avg.toFixed(2);
@@ -675,23 +702,23 @@ F1,10/2026,Marseille,Lille,Clement Turpin,14,15,3,3,2.30,3.10`;
       document.getElementById('selAway').innerHTML = tNames.map((t, i) => `<option value="${t}" ${i===1?'selected':''}>Away: ${t} (${db.teams[t].agg.toFixed(2)}x)</option>`).join('');
       document.getElementById('selRef').innerHTML = `<option value="League Avg">Ref: League Avg (1.00x)</option>` + rNames.map(r => `<option value="${r}">Ref: ${r} (${db.refs[r].toFixed(2)}x)</option>`).join('');
 
-      const target = upcoming.length ? upcoming.slice(0, 30) : played.slice(-20).reverse();
-      document.getElementById('tableTitle').innerText = upcoming.length
-        ? `Upcoming Weekly Fixtures Predictions (${target.length} Matches)`
-        : `Recent Matchday Backtest & Verification (${target.length} Matches)`;
+      db.upcomingList = upcoming.slice(0, 50).map(m => makeRowObj(m.idx, m.div, m.date, m.h, m.a, m.rf, m.close, m.closeLbl, null));
+      db.playedList = played.slice(-25).reverse().map(m => makeRowObj(m.idx, m.div, m.date, m.h, m.a, m.rf, m.close, m.closeLbl, m.y));
 
-      db.list = target.map(m => makeRowObj(m.idx, m.div, m.h, m.a, m.rf, m.close, m.closeLbl, m.y));
-      sortAndRender();
+      document.getElementById('cntUpcoming').innerText = db.upcomingList.length;
+      document.getElementById('cntPlayed').innerText = db.playedList.length;
+
+      switchViewMode(db.upcomingList.length > 0 ? 'upcoming' : 'played');
       runSim();
     }
 
-    function makeRowObj(idx, div, h, a, rf, close, closeLbl, y) {
+    function makeRowObj(idx, div, date, h, a, rf, close, closeLbl, y) {
       const base = db.divAvg[div] || db.avg || 4.16;
       const hAgg = db.teams[h] ? db.teams[h].agg : 1.00;
       const aAgg = db.teams[a] ? db.teams[a].agg : 1.00;
       const rStr = db.refs[rf] || 1.00;
       const res = calcPoisson(base, rStr, hAgg, aAgg, 1.08, 0.90, 1.00, close, 1.00);
-      return { idx, div, base, h, a, rf, hAgg, aAgg, rStr, close, closeLbl, y, ...res };
+      return { idx, div, date, base, h, a, rf, hAgg, aAgg, rStr, close, closeLbl, y, ...res };
     }
 
     function sortAndRender() {
@@ -709,16 +736,25 @@ F1,10/2026,Marseille,Lille,Clement Turpin,14,15,3,3,2.30,3.10`;
       const cs = document.getElementById('selClose');
       if (!h || !a) return;
       const div = db.teams[h] ? db.teams[h].div : 'ALL';
-      db.list.unshift(makeRowObj(-1, div, h, a, rf, parseFloat(cs.value), cs.options[cs.selectedIndex].text, null));
-      renderTable();
+      const customObj = makeRowObj(-1, div, 'Custom', h, a, rf, parseFloat(cs.value), cs.options[cs.selectedIndex].text, null);
+      db.upcomingList.unshift(customObj);
+      document.getElementById('cntUpcoming').innerText = db.upcomingList.length;
+      switchViewMode('upcoming');
       calibrateWithAd(0);
     }
 
     function renderTable() {
       const tb = document.getElementById('tableBody');
+      if (!db.list.length) {
+        tb.innerHTML = `<tr><td colspan="12" class="p-6 text-center text-slate-400">No matches in this tab. Try switching tabs or selecting another league.</td></tr>`;
+        return;
+      }
       tb.innerHTML = db.list.map((m, i) => `
         <tr class="hover:bg-slate-900/90 transition">
-          <td class="p-2.5 text-slate-400 font-mono">${m.div}</td>
+          <td class="p-2.5 text-slate-400 font-mono">
+            <div class="font-bold text-slate-300">${m.div}</div>
+            <div class="text-[10px] text-slate-500">${m.date || '-'}</div>
+          </td>
           <td class="p-2.5 font-bold text-white">${m.h} <span class="text-slate-500 font-normal">vs</span> ${m.a}</td>
           <td class="p-2.5 text-slate-300">${m.rf} <span class="text-yellow-400 font-semibold">(${m.rStr.toFixed(2)}x)</span></td>
           <td class="p-2.5 text-slate-300 text-[11px]">H: ${m.hAgg.toFixed(2)}x | A: ${m.aAgg.toFixed(2)}x</td>
@@ -728,7 +764,7 @@ F1,10/2026,Marseille,Lille,Clement Turpin,14,15,3,3,2.30,3.10`;
           <td class="p-2.5 font-semibold text-white">${m.o35.toFixed(1)}%</td>
           <td class="p-2.5 font-bold text-yellow-300">${m.o45.toFixed(1)}%</td>
           <td class="p-2.5 text-red-400 font-semibold">${m.red.toFixed(1)}%</td>
-          <td class="p-2.5">${m.y !== null ? `<span class="px-2 py-0.5 rounded bg-slate-800 text-white font-bold">${m.y} Cards</span>` : '<span class="text-emerald-400 font-semibold">Upcoming</span>'}</td>
+          <td class="p-2.5">${m.y !== null ? `<span class="px-2 py-0.5 rounded bg-slate-800 text-white font-bold">${m.y} Cards</span>` : '<span class="px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 font-semibold">Upcoming</span>'}</td>
           <td class="p-2.5 text-center">
             <button onclick="calibrateWithAd(${i})" class="px-2.5 py-1 rounded-lg bg-yellow-500 hover:bg-yellow-400 text-slate-950 font-extrabold transition">Calibrate</button>
           </td>
@@ -826,9 +862,9 @@ F1,10/2026,Marseille,Lille,Clement Turpin,14,15,3,3,2.30,3.10`;
     }
 
     function exportPredictions() {
-      let csv = "League,Home,Away,Referee,RefStrictness,HomeAgg,AwayAgg,ExpectedYellowCards,LambdaHome,LambdaAway,Over3.5,Over4.5,RedCardProb,ActualCards\n";
+      let csv = "League,Date,Home,Away,Referee,RefStrictness,HomeAgg,AwayAgg,ExpectedYellowCards,LambdaHome,LambdaAway,Over3.5,Over4.5,RedCardProb,ActualCards\n";
       db.list.forEach(m => {
-        csv += `${m.div},${m.h},${m.a},${m.rf},${m.rStr.toFixed(2)},${m.hAgg.toFixed(2)},${m.aAgg.toFixed(2)},${m.lT.toFixed(2)},${m.lH.toFixed(2)},${m.lA.toFixed(2)},${m.o35.toFixed(1)}%,${m.o45.toFixed(1)}%,${m.red.toFixed(1)}%,${m.y !== null ? m.y : 'Upcoming'}\n`;
+        csv += `${m.div},${m.date},${m.h},${m.a},${m.rf},${m.rStr.toFixed(2)},${m.hAgg.toFixed(2)},${m.aAgg.toFixed(2)},${m.lT.toFixed(2)},${m.lH.toFixed(2)},${m.lA.toFixed(2)},${m.o35.toFixed(1)}%,${m.o45.toFixed(1)}%,${m.red.toFixed(1)}%,${m.y !== null ? m.y : 'Upcoming'}\n`;
       });
       const a = document.createElement('a');
       a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8;' }));
