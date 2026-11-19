@@ -11,235 +11,390 @@ permissions:
 jobs:
   update-data:
     runs-on: ubuntu-latest
+
     steps:
-      - name: Checkout Repository
+      - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Fetch APIs Safely & Build Compact bundle.json
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Fetch League Stats & Upcoming Fixtures (Football-Data + ESPN)
         run: |
-          mkdir -p data
-          python3 - << 'PYEOF'
-          import csv, datetime, difflib, io, json, os, time, unicodedata, urllib.request, urllib.error
+          python3 - << 'EOF'
+          import csv
+          import difflib
+          import io
+          import json
+          import os
+          import re
+          import ssl
+          import time
+          import unicodedata
+          import urllib.request
+          from datetime import datetime, timedelta, timezone
 
           LEAGUES = {
-              'SP1': 'esp.1', 'E0': 'eng.1', 'I1': 'ita.1', 'D1': 'ger.1',
-              'F1': 'fra.1',  'P1': 'por.1', 'T1': 'tur.1', 'G1': 'gre.1', 'N1': 'ned.1'
+              "E0": "eng.1",
+              "SP1": "esp.1",
+              "I1": "ita.1",
+              "D1": "ger.1",
+              "F1": "fra.1",
+              "P1": "por.1",
+              "T1": "tur.1",
+              "G1": "gre.1",
+              "N1": "ned.1",
           }
 
-          ALIASES = {
-              'manchester united': 'Man United', 'manchester city': 'Man City',
-              'nottingham forest': "Nott'm Forest", 'wolverhampton wanderers': 'Wolves',
-              'newcastle united': 'Newcastle', 'tottenham hotspur': 'Tottenham',
-              'west ham united': 'West Ham', 'brighton & hove albion': 'Brighton',
-              'afc bournemouth': 'Bournemouth', 'leicester city': 'Leicester',
-              'ipswich town': 'Ipswich', 'leeds united': 'Leeds',
-              'atletico madrid': 'Ath Madrid', 'athletic club': 'Ath Bilbao',
-              'athletic bilbao': 'Ath Bilbao', 'real betis': 'Betis',
-              'celta vigo': 'Celta', 'rcd espanyol': 'Espanol', 'espanyol': 'Espanol',
-              'deportivo alaves': 'Alaves', 'rayo vallecano': 'Vallecano',
-              'real sociedad': 'Sociedad', 'real valladolid': 'Valladolid',
-              'paris saint-germain': 'Paris SG', 'olympique marseille': 'Marseille',
-              'olympique lyonnais': 'Lyon', 'as monaco': 'Monaco',
-              'stade rennais': 'Rennes', 'stade brestois': 'Brest',
-              'rc lens': 'Lens', 'rc strasbourg': 'Strasbourg', 'fc nantes': 'Nantes',
-              'internazionale': 'Inter', 'inter milan': 'Inter', 'ac milan': 'Milan',
-              'hellas verona': 'Verona', 'as roma': 'Roma', 'bayer leverkusen': 'Leverkusen',
-              'borussia dortmund': 'Dortmund', 'borussia monchengladbach': "M'gladbach",
-              'eintracht frankfurt': 'Ein Frankfurt', 'vfb stuttgart': 'Stuttgart',
-              'sc freiburg': 'Freiburg', 'vfl wolfsburg': 'Wolfsburg',
-              'sv werder bremen': 'Werder Bremen', 'fsv mainz 05': 'Mainz',
-              'tsg hoffenheim': 'Hoffenheim', 'fc augsburg': 'Augsburg',
-              'fc st. pauli': 'St Pauli', '1. fc union berlin': 'Union Berlin',
-              '1. fc heidenheim 1846': 'Heidenheim', 'sporting cp': 'Sp Lisbon',
-              'fc porto': 'Porto', 'sl benfica': 'Benfica', 'sporting braga': 'Sp Braga'
-          }
+          SEASONS = ["2627", "2526"]
 
           HEADERS = {
-              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
-              'Accept': 'text/csv,application/json,*/*'
+              "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
+              "Accept": "application/json, text/csv, text/plain, */*",
           }
 
-          def fetch_safe(url, retries=3, base_delay=2.0):
+          SSL_CTX = ssl.create_default_context()
+          SSL_CTX.check_hostname = False
+          SSL_CTX.verify_mode = ssl.CERT_NONE
+
+          TEAM_ALIASES = {
+              "manchester united": "Man United",
+              "manchester city": "Man City",
+              "newcastle united": "Newcastle",
+              "nottingham forest": "Nott'm Forest",
+              "wolverhampton wanderers": "Wolves",
+              "tottenham hotspur": "Tottenham",
+              "west ham united": "West Ham",
+              "brighton & hove albion": "Brighton",
+              "brighton and hove albion": "Brighton",
+              "afc bournemouth": "Bournemouth",
+              "leicester city": "Leicester",
+              "ipswich town": "Ipswich",
+              "leeds united": "Leeds",
+              "atletico madrid": "Ath Madrid",
+              "athletic club": "Ath Bilbao",
+              "athletic bilbao": "Ath Bilbao",
+              "real betis": "Betis",
+              "real sociedad": "Sociedad",
+              "rayo vallecano": "Vallecano",
+              "celta vigo": "Celta",
+              "rcd espanyol": "Espanol",
+              "deportivo alaves": "Alaves",
+              "bayern munich": "Bayern Munich",
+              "borussia dortmund": "Dortmund",
+              "bayer leverkusen": "Leverkusen",
+              "borussia monchengladbach": "M'gladbach",
+              "eintracht frankfurt": "Ein Frankfurt",
+              "sc freiburg": "Freiburg",
+              "vfb stuttgart": "Stuttgart",
+              "fsv mainz 05": "Mainz",
+              "tsg hoffenheim": "Hoffenheim",
+              "fc augsburg": "Augsburg",
+              "vfl wolfsburg": "Wolfsburg",
+              "fc st. pauli": "St Pauli",
+              "st. pauli": "St Pauli",
+              "1. fc heidenheim 1846": "Heidenheim",
+              "fc koln": "FC Koln",
+              "internazionale": "Inter",
+              "inter milan": "Inter",
+              "ac milan": "Milan",
+              "as roma": "Roma",
+              "hellas verona": "Verona",
+              "paris saint-germain": "Paris SG",
+              "olympique marseille": "Marseille",
+              "olympique lyonnais": "Lyon",
+              "as monaco": "Monaco",
+              "stade rennais": "Rennes",
+              "rc lens": "Lens",
+              "losc lille": "Lille",
+              "ogc nice": "Nice",
+              "stade brestois 29": "Brest",
+              "sporting cp": "Sp Lisbon",
+              "sporting lisbon": "Sp Lisbon",
+              "sc braga": "Sp Braga",
+              "fc porto": "Porto",
+              "sl benfica": "Benfica",
+              "vitoria guimaraes": "Guimaraes",
+              "psv eindhoven": "PSV Eindhoven",
+              "afc ajax": "Ajax",
+              "feyenoord rotterdam": "Feyenoord",
+              "az alkmaar": "AZ Alkmaar",
+              "fc twente": "Twente",
+              "fc utrecht": "Utrecht",
+          }
+
+          def fetch_url(url, retries=3, timeout=18):
               for attempt in range(retries):
                   try:
                       req = urllib.request.Request(url, headers=HEADERS)
-                      with urllib.request.urlopen(req, timeout=15) as resp:
-                          return resp.read().decode('utf-8-sig', errors='ignore')
-                  except urllib.error.HTTPError as e:
-                      if e.code == 429:
-                          wait = min(int(e.headers.get('Retry-After', base_delay * (2 ** attempt))), 30)
-                          print(f"Rate limited (429) on {url}. Waiting {wait}s...")
-                          time.sleep(wait)
-                      elif e.code in (500, 502, 503, 504):
-                          time.sleep(base_delay * (2 ** attempt))
-                      else:
-                          return None
+                      with urllib.request.urlopen(req, timeout=timeout, context=SSL_CTX) as resp:
+                          raw = resp.read()
+                          try:
+                              return raw.decode("utf-8-sig")
+                          except UnicodeDecodeError:
+                              return raw.decode("latin-1", errors="ignore")
                   except Exception as e:
-                      print(f"Fetch retry {attempt+1} for {url}: {e}")
-                      time.sleep(base_delay * (2 ** attempt))
+                      if attempt == retries - 1:
+                          print(f"[WARN] Failed {url}: {e}")
+                          return None
+                      time.sleep(1.5 * (attempt + 1))
               return None
 
-          def to_num(v):
-              try:
-                  x = float(v)
-                  return round(x, 2) if x == x else None
-              except (TypeError, ValueError):
-                  return None
+          def strip_accents(text):
+              nfkd = unicodedata.normalize("NFKD", text or "")
+              return "".join(c for c in nfkd if not unicodedata.combining(c))
 
-          def norm(s):
-              s = unicodedata.normalize('NFKD', s).encode('ascii', 'ignore').decode('ascii')
-              return ' '.join(s.lower().replace('-', ' ').split())
+          def clean_team_key(name):
+              s = strip_accents(name).lower().strip()
+              s = re.sub(r"[^a-z0-9\s]", " ", s)
+              tokens = [t for t in s.split() if t not in {"fc", "cf", "sc", "ac", "as", "ud", "cd", "rc", "rcd", "sv", "vfb", "vfl", "tsg", "fk", "sk", "afc", "ogc", "losc", "1", "05", "04", "1899", "1909", "29"}]
+              return " ".join(tokens).strip() or s.strip()
 
-          def map_team(raw, known):
-              if not known:
-                  return raw
-              n = norm(raw)
-              for k in known:
-                  if norm(k) == n:
-                      return k
-              if n in ALIASES and ALIASES[n] in known:
-                  return ALIASES[n]
-              sub = [k for k in known if len(norm(k)) >= 4 and (norm(k) in n or n in norm(k))]
-              if sub:
-                  return max(sub, key=len)
-              best = difflib.get_close_matches(raw, list(known), n=1, cutoff=0.55)
-              return best[0] if best else raw
-
-          # Load previous bundle so API hiccups never wipe existing good data
-          prev_bundle = {'leagues': {}, 'fixtures': []}
-          if os.path.exists('data/bundle.json'):
-              try:
-                  with open('data/bundle.json', encoding='utf-8') as f:
-                      prev_bundle = json.load(f)
-              except Exception:
-                  pass
-
-          leagues_data = {}
-          for code in LEAGUES:
-              time.sleep(1.5)  # Polite pacing to avoid API throttling
-              txt = fetch_safe(f"https://www.football-data.co.uk/mmz4281/2627/{code}.csv")
-              if not txt or 'HomeTeam' not in txt:
-                  txt = fetch_safe(f"https://www.football-data.co.uk/mmz4281/2526/{code}.csv")
-
-              parsed = []
-              if txt and 'HomeTeam' in txt:
-                  for row in csv.DictReader(io.StringIO(txt)):
-                      h = (row.get('HomeTeam') or '').strip()
-                      a = (row.get('AwayTeam') or '').strip()
-                      hy, ay = to_num(row.get('HY')), to_num(row.get('AY'))
-                      if not h or not a or hy is None or ay is None:
-                          continue
-                      parsed.append([
-                          (row.get('Date') or '').strip(),
-                          h, a,
-                          (row.get('Referee') or '').strip(),
-                          to_num(row.get('HF')), to_num(row.get('AF')),
-                          hy, ay,
-                          to_num(row.get('B365H') or row.get('AvgH')),
-                          to_num(row.get('B365A') or row.get('AvgA'))
-                      ])
-
-              if parsed:
-                  leagues_data[code] = parsed
-                  print(f"Updated {code}: {len(parsed)} matches")
-              else:
-                  leagues_data[code] = prev_bundle.get('leagues', {}).get(code, [])
-                  print(f"Kept cached {code}: {len(leagues_data[code])} matches")
-
-          # Build upcoming fixtures (Football-Data first, ESPN backup with pacing)
-          today = datetime.datetime.utcnow().date()
-          end_day = today + datetime.timedelta(days=14)
-          date_range = f"{today.strftime('%Y%m%d')}-{end_day.strftime('%Y%m%d')}"
-          upcoming = []
-          covered = set()
-
-          time.sleep(1.5)
-          fd_fix = fetch_safe("https://www.football-data.co.uk/fixtures.csv")
-          if fd_fix and 'HomeTeam' in fd_fix:
-              for row in csv.DictReader(io.StringIO(fd_fix)):
-                  div = (row.get('Div') or '').strip()
-                  if div not in LEAGUES:
+          def match_team_name(espn_name, short_name, known_teams):
+              for candidate in (espn_name, short_name):
+                  if not candidate:
                       continue
-                  d_str = (row.get('Date') or '').strip()
-                  dt = None
-                  for fmt in ('%d/%m/%Y', '%d/%m/%y'):
-                      try:
-                          dt = datetime.datetime.strptime(d_str, fmt).date()
-                          break
-                      except ValueError:
-                          pass
-                  if dt and dt >= today:
-                      upcoming.append((dt.isoformat(), [
-                          div, dt.strftime('%d/%m/%Y'),
-                          (row.get('HomeTeam') or '').strip(),
-                          (row.get('AwayTeam') or '').strip(),
-                          (row.get('Referee') or '').strip(),
-                          to_num(row.get('B365H') or row.get('AvgH')),
-                          to_num(row.get('B365A') or row.get('AvgA'))
-                      ]))
-                      covered.add(div)
+                  low = strip_accents(candidate).lower().strip()
+                  if low in TEAM_ALIASES:
+                      alias = TEAM_ALIASES[low]
+                      if not known_teams or alias in known_teams:
+                          return alias
+                  for kt in known_teams:
+                      if strip_accents(kt).lower() == low:
+                          return kt
 
-          for code, slug in LEAGUES.items():
-              if code in covered:
-                  continue
-              time.sleep(1.2)
-              espn_txt = fetch_safe(f"https://site.api.espn.com/apis/site/v2/sports/soccer/{slug}/scoreboard?dates={date_range}")
-              if not espn_txt:
-                  continue
-              known = {r[1] for r in leagues_data.get(code, [])} | {r[2] for r in leagues_data.get(code, [])}
+              if known_teams:
+                  norm_map = {clean_team_key(kt): kt for kt in known_teams}
+                  for candidate in (espn_name, short_name):
+                      if not candidate:
+                          continue
+                      ck = clean_team_key(candidate)
+                      if ck in norm_map:
+                          return norm_map[ck]
+                      for nk, orig in norm_map.items():
+                          if len(nk) >= 4 and (nk in ck or ck in nk):
+                              return orig
+                      close = difflib.get_close_matches(ck, list(norm_map.keys()), n=1, cutoff=0.58)
+                      if close:
+                          return norm_map[close[0]]
+
+              return (short_name or espn_name or "").strip()
+
+          def parse_int(val):
               try:
-                  payload = json.loads(espn_txt)
-                  for ev in payload.get('events', []):
-                      if ev.get('status', {}).get('type', {}).get('state') != 'pre':
-                          continue
-                      dt = datetime.datetime.strptime(ev.get('date', '')[:10], '%Y-%m-%d').date()
-                      if dt < today:
-                          continue
-                      comps = ev.get('competitions', [{}])[0].get('competitors', [])
-                      h = next((c['team']['displayName'] for c in comps if c.get('homeAway') == 'home'), '')
-                      a = next((c['team']['displayName'] for c in comps if c.get('homeAway') == 'away'), '')
-                      if h and a:
-                          upcoming.append((dt.isoformat(), [
-                              code, dt.strftime('%d/%m/%Y'),
-                              map_team(h, known), map_team(a, known),
-                              '', None, None
-                          ]))
-              except Exception as e:
-                  print(f"ESPN parse skip {code}: {e}")
+                  return int(float(str(val).strip()))
+              except Exception:
+                  return 0
 
-          upcoming.sort(key=lambda x: (x[0], x[1][0]))
-          fixtures_list = [x[1] for x in upcoming]
+          def parse_float(val):
+              try:
+                  v = float(str(val).strip())
+                  return round(v, 2) if v > 0 else 0
+              except Exception:
+                  return 0
 
-          # Keep still-valid cached fixtures if all fixture APIs failed
-          if not fixtures_list and prev_bundle.get('fixtures'):
-              for row in prev_bundle['fixtures']:
+          def pick_odds(row, keys):
+              for k in keys:
+                  v = parse_float(row.get(k, ""))
+                  if v > 0:
+                      return v
+              return 0
+
+          def parse_date_obj(date_str):
+              if not date_str:
+                  return None
+              s = str(date_str).strip()
+              for fmt in ("%d/%m/%Y", "%d/%m/%y", "%Y-%m-%d"):
                   try:
-                      if datetime.datetime.strptime(row[1], '%d/%m/%Y').date() >= today:
-                          fixtures_list.append(row)
+                      return datetime.strptime(s[:10], fmt)
                   except Exception:
                       pass
+              try:
+                  return datetime.fromisoformat(s.replace("Z", "+00:00")).replace(tzinfo=None)
+              except Exception:
+                  return None
 
-          now_utc = datetime.datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')
-          bundle = {
-              'updated_at': now_utc,
-              'leagues': leagues_data,
-              'fixtures': fixtures_list
-          }
+          def format_dmy(dt_obj):
+              return dt_obj.strftime("%d/%m/%Y") if dt_obj else ""
 
-          # Save single minified JSON bundle (~80KB total instead of ~2.5MB CSVs)
-          with open('data/bundle.json', 'w', encoding='utf-8') as f:
-              json.dump(bundle, f, ensure_ascii=False, separators=(',', ':'))
+          def main():
+              os.makedirs("data", exist_ok=True)
+              leagues_data = {}
+              league_teams = {code: set() for code in LEAGUES}
 
-          with open('data/last_updated.txt', 'w', encoding='utf-8') as f:
-              f.write(now_utc)
+              # 1. دریافت آمار لیگ‌ها از Football-Data.co.uk
+              for code in LEAGUES:
+                  rows_out = []
+                  for season in SEASONS:
+                      url = f"https://www.football-data.co.uk/mmz4281/{season}/{code}.csv"
+                      text = fetch_url(url)
+                      if not text:
+                          continue
+                      reader = csv.DictReader(io.StringIO(text))
+                      temp_rows = []
+                      for row in reader:
+                          home = (row.get("HomeTeam") or "").strip()
+                          away = (row.get("AwayTeam") or "").strip()
+                          dt = parse_date_obj(row.get("Date", ""))
+                          if not home or not away or not dt:
+                              continue
+                          ref = (row.get("Referee") or "").strip()
+                          hf = parse_int(row.get("HF"))
+                          af = parse_int(row.get("AF"))
+                          hy = parse_int(row.get("HY"))
+                          ay = parse_int(row.get("AY"))
+                          odd_h = pick_odds(row, ["B365H", "AvgH", "MaxH", "PSH", "WHH"])
+                          odd_a = pick_odds(row, ["B365A", "AvgA", "MaxA", "PSA", "WHA"])
+                          temp_rows.append([format_dmy(dt), home, away, ref, hf, af, hy, ay, odd_h, odd_a])
+                      if len(temp_rows) >= 5:
+                          rows_out = temp_rows
+                          print(f"[LEAGUE] {code} ({season}): {len(rows_out)} matches")
+                          break
+                  leagues_data[code] = rows_out
+                  for r in rows_out:
+                      league_teams[code].add(r[1])
+                      league_teams[code].add(r[2])
 
-          print(f"Bundle built successfully: {os.path.getsize('data/bundle.json')/1024:.1f} KB, {len(fixtures_list)} upcoming fixtures")
-          PYEOF
+              # 2. دریافت بازی‌های پیش‌رو (منبع ۱: Football-Data fixtures.csv)
+              fixtures_list = []
+              seen_keys = set()
+              now_utc = datetime.now(timezone.utc).replace(tzinfo=None)
+              min_dt = now_utc - timedelta(hours=18)
+              max_dt = now_utc + timedelta(days=15)
 
-      - name: Commit & Push Only If Data Changed
+              fd_count = 0
+              fd_text = fetch_url("https://www.football-data.co.uk/fixtures.csv")
+              if fd_text:
+                  reader = csv.DictReader(io.StringIO(fd_text))
+                  for row in reader:
+                      div = (row.get("Div") or "").strip()
+                      if div not in LEAGUES:
+                          continue
+                      home = (row.get("HomeTeam") or "").strip()
+                      away = (row.get("AwayTeam") or "").strip()
+                      dt = parse_date_obj(row.get("Date", ""))
+                      if not home or not away or not dt:
+                          continue
+                      if dt.date() < min_dt.date() or dt.date() > max_dt.date():
+                          continue
+                      ref = (row.get("Referee") or "").strip()
+                      odd_h = pick_odds(row, ["B365H", "AvgH", "MaxH", "PSH", "WHH"])
+                      odd_a = pick_odds(row, ["B365A", "AvgA", "MaxA", "PSA", "WHA"])
+                      key = (div, clean_team_key(home), clean_team_key(away))
+                      if key in seen_keys:
+                          continue
+                      seen_keys.add(key)
+                      fixtures_list.append((dt, [div, format_dmy(dt), home, away, ref, odd_h, odd_a]))
+                      fd_count += 1
+              print(f"[FIXTURES] Football-Data.co.uk: {fd_count}")
+
+              # 3. دریافت بازی‌های پیش‌رو (منبع ۲ و ۳: ESPN API برای ۱۴ روز آینده + پشتیبان هفته جاری)
+              start_str = now_utc.strftime("%Y%m%d")
+              end_str = (now_utc + timedelta(days=14)).strftime("%Y%m%d")
+              espn_total = 0
+
+              for div, slug in LEAGUES.items():
+                  urls_to_try = [
+                      f"https://site.api.espn.com/apis/site/v2/sports/soccer/{slug}/scoreboard?dates={start_str}-{end_str}&limit=100",
+                      f"https://site.api.espn.com/apis/site/v2/sports/soccer/{slug}/scoreboard",
+                  ]
+                  events = []
+                  for url in urls_to_try:
+                      raw = fetch_url(url)
+                      if not raw:
+                          continue
+                      try:
+                          payload = json.loads(raw)
+                          ev_list = payload.get("events") or []
+                          if ev_list:
+                              events = ev_list
+                              break
+                      except Exception as e:
+                          print(f"[WARN] ESPN JSON error for {slug}: {e}")
+
+                  added_for_div = 0
+                  for ev in events:
+                      comps = ev.get("competitions") or []
+                      if not comps:
+                          continue
+                      comp = comps[0]
+                      status_type = (comp.get("status") or {}).get("type") or (ev.get("status") or {}).get("type") or {}
+                      if status_type.get("completed") is True or status_type.get("state") == "post":
+                          continue
+
+                      dt = parse_date_obj(ev.get("date") or comp.get("date") or "")
+                      if not dt or dt.date() < min_dt.date() or dt.date() > max_dt.date():
+                          continue
+
+                      home_raw, home_short = "", ""
+                      away_raw, away_short = "", ""
+                      for team_entry in (comp.get("competitors") or []):
+                          t_obj = team_entry.get("team") or {}
+                          disp = t_obj.get("displayName") or t_obj.get("name") or ""
+                          short = t_obj.get("shortDisplayName") or disp
+                          if team_entry.get("homeAway") == "home":
+                              home_raw, home_short = disp, short
+                          elif team_entry.get("homeAway") == "away":
+                              away_raw, away_short = disp, short
+
+                      if not home_raw or not away_raw:
+                          continue
+
+                      home_name = match_team_name(home_raw, home_short, league_teams[div])
+                      away_name = match_team_name(away_raw, away_short, league_teams[div])
+                      key = (div, clean_team_key(home_name), clean_team_key(away_name))
+                      if key in seen_keys:
+                          continue
+                      seen_keys.add(key)
+
+                      ref = ""
+                      officials = comp.get("officials") or []
+                      if officials and isinstance(officials[0], dict):
+                          ref = (officials[0].get("displayName") or officials[0].get("fullName") or "").strip()
+
+                      fixtures_list.append((dt, [div, format_dmy(dt), home_name, away_name, ref, 0, 0]))
+                      added_for_div += 1
+                      espn_total += 1
+
+                  print(f"[FIXTURES] ESPN {div} ({slug}): +{added_for_div}")
+                  time.sleep(0.25)
+
+              # مرتب‌سازی زمانی بازی‌های پیش‌رو
+              fixtures_list.sort(key=lambda x: (x[0], x[1][0], x[1][2]))
+              final_fixtures = [item[1] for item in fixtures_list]
+
+              bundle = {
+                  "updated_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                  "leagues": leagues_data,
+                  "fixtures": final_fixtures,
+              }
+
+              with open("data/bundle.json", "w", encoding="utf-8") as f:
+                  json.dump(bundle, f, ensure_ascii=False, separators=(",", ":"))
+
+              with open("data/fixtures.csv", "w", encoding="utf-8", newline="") as f:
+                  writer = csv.writer(f)
+                  writer.writerow(["Div", "Date", "HomeTeam", "AwayTeam", "Referee", "B365H", "B365A"])
+                  for fx in final_fixtures:
+                      writer.writerow(fx)
+
+              print(f"=== DONE: Total upcoming fixtures saved = {len(final_fixtures)} (FD: {fd_count}, ESPN: {espn_total}) ===")
+
+          if __name__ == "__main__":
+              main()
+          EOF
+
+      - name: Commit and push updated bundle
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add data/bundle.json data/last_updated.txt
-          git diff --staged --quiet || git commit -m "Update compact football data bundle"
-          git push
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/bundle.json data/fixtures.csv
+          if ! git diff --staged --quiet; then
+            git commit -m "Auto-update football stats & upcoming fixtures"
+            git push
+            curl -s "https://purge.jsdelivr.net/gh/frankalayari-beep/card_app@main/data/bundle.json" || true
+          else
+            echo "No data changes to commit."
+          fi
