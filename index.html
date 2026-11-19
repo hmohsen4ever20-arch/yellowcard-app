@@ -79,7 +79,7 @@
           ⬇ Export CSV
         </button>
         <button onclick="resetAllData()" class="px-3 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold border border-slate-700 transition">
-          Reset
+          Refresh / Reset
         </button>
       </div>
     </header>
@@ -355,20 +355,29 @@
   </div>
 
   <script>
+    // =========================================================================
+    // MONETIZATION & 3-LAYER RATE-LIMIT PROTECTION CONFIG
+    // =========================================================================
     const ADSTERRA_DIRECT_LINK = "https://asiafilm.org/4/052064ca4ffd0916d363a8d4ca962a64";
+    const CACHE_KEY = 'betcard_bundle_cache_v1';
+    const CACHE_TTL_MS = 6 * 60 * 60 * 1000; // 6-hour client & CDN cache window
+    const MANUAL_COOLDOWN_MS = 60 * 1000;    // Prevent rapid refresh spamming
 
     const DATA_MIRRORS = [
-      { name: 'jsDelivr CDN', url: 'https://cdn.jsdelivr.net/gh/frankalayari-beep/card_app@main/data', local: false },
-      { name: 'GitHub Pages', url: 'https://frankalayari-beep.github.io/card_app/data', local: false },
-      { name: 'GitHub Raw',   url: 'https://raw.githubusercontent.com/frankalayari-beep/card_app/main/data', local: false },
-      { name: 'Offline Pack', url: './data', local: true }
+      { name: 'jsDelivr CDN', url: 'https://cdn.jsdelivr.net/gh/frankalayari-beep/card_app@main/data/bundle.json', local: false },
+      { name: 'GitHub Pages', url: 'https://frankalayari-beep.github.io/card_app/data/bundle.json', local: false },
+      { name: 'GitHub Raw',   url: 'https://raw.githubusercontent.com/frankalayari-beep/card_app/main/data/bundle.json', local: false },
+      { name: 'Offline Pack', url: './data/bundle.json', local: true }
     ];
 
-    let preferredMirrorIndex = 0;
+    let memBundle = null;
+    let memSource = '';
+    let lastNetworkFetch = 0;
     let db = { avg: 4.16, foulsAvg: 22.8, divAvg: {}, teams: {}, refs: {}, upcomingList: [], playedList: [], list: [], viewMode: 'upcoming' };
     let adTimerInterval = null;
     let pendingAdCallback = null;
 
+    // 15-Second Mandatory Ad Modal
     function triggerAdGate(reasonText, onCompleteCallback) {
       const modal = document.getElementById('adModal');
       const timerBadge = document.getElementById('adTimerBadge');
@@ -428,7 +437,7 @@
 
     function selectLeagueWithAd(code) {
       highlightLeagueBtn(code);
-      fetchRepoLeague(code);
+      fetchRepoLeague(code, false);
     }
 
     function switchViewMode(mode) {
@@ -462,6 +471,7 @@ I1,10/2026,Hellas Verona,Lazio,Paride Tremolada,17,15,4,4,3.10,2.35
 D1,10/2026,Augsburg,Mainz,Felix Zwayer,15,16,4,3,2.45,2.90
 F1,10/2026,Marseille,Lille,Clement Turpin,14,15,3,3,2.30,3.10`;
 
+    // Poisson Math Engine
     function fact(n) { let r = 1; for (let i = 2; i <= n; i++) r *= i; return r; }
     function pPMF(k, lam) { return (Math.pow(lam, k) * Math.exp(-lam)) / fact(k); }
     function pCDF(kMax, lam) { let s = 0; for (let k = 0; k <= kMax; k++) s += pPMF(k, lam); return s; }
@@ -489,6 +499,15 @@ F1,10/2026,Marseille,Lille,Clement Turpin,14,15,3,3,2.30,3.10`;
       }
       res.push(cur.trim());
       return res;
+    }
+
+    function computeOddsTension(oH, oA) {
+      if (oH != null && oA != null && !isNaN(oH) && !isNaN(oA) && oH > 1 && oA > 1) {
+        const d = Math.abs((1 / oH) - (1 / oA));
+        if (d <= 0.16) return { close: 1.15, closeLbl: 'Tight (+15%)' };
+        if (d >= 0.42) return { close: 0.82, closeLbl: 'Lopsided (-18%)' };
+      }
+      return { close: 1.00, closeLbl: 'Balanced (0%)' };
     }
 
     function extractMatchesFromCSV(csvText, allowedDivs = null, startIndex = 0) {
@@ -528,24 +547,39 @@ F1,10/2026,Marseille,Lille,Clement Turpin,14,15,3,3,2.30,3.10`;
         const af = iAF !== -1 ? parseFloat(v[iAF]) : NaN;
         const oH = iOddH !== -1 ? parseFloat(v[iOddH]) : NaN;
         const oA = iOddA !== -1 ? parseFloat(v[iOddA]) : NaN;
+        const t = computeOddsTension(oH, oA);
 
-        let close = 1.00, closeLbl = 'Balanced (0%)';
-        if (!isNaN(oH) && !isNaN(oA) && oH > 1 && oA > 1) {
-          const d = Math.abs((1 / oH) - (1 / oA));
-          if (d <= 0.16) { close = 1.15; closeLbl = 'Tight (+15%)'; }
-          else if (d >= 0.42) { close = 0.82; closeLbl = 'Lopsided (-18%)'; }
-        }
-
-        out.push({ idx: startIndex + idx, div, date, h, a, rf, hy, ay, hf, af, close, closeLbl });
+        out.push({ idx: startIndex + idx, div, date, h, a, rf, hy, ay, hf, af, close: t.close, closeLbl: t.closeLbl });
       });
       return out;
     }
 
-    async function fetchWithTimeout(url, ms = 6000) {
+    // 3-Layer Smart Cache & Anti-Rate-Limit Loader
+    function getCacheBucket() {
+      return Math.floor(Date.now() / CACHE_TTL_MS);
+    }
+
+    function readLocalCache() {
+      try {
+        const raw = localStorage.getItem(CACHE_KEY);
+        if (!raw) return null;
+        const parsed = JSON.parse(raw);
+        if (parsed && parsed.data && parsed.data.leagues) return parsed;
+      } catch (e) {}
+      return null;
+    }
+
+    function writeLocalCache(data, source) {
+      try {
+        localStorage.setItem(CACHE_KEY, JSON.stringify({ ts: Date.now(), source, data }));
+      } catch (e) {}
+    }
+
+    async function fetchWithTimeout(url, ms = 7000) {
       const ctrl = new AbortController();
       const timer = setTimeout(() => ctrl.abort(), ms);
       try {
-        const res = await fetch(url, { cache: 'no-store', signal: ctrl.signal });
+        const res = await fetch(url, { signal: ctrl.signal });
         clearTimeout(timer);
         return res;
       } catch (e) {
@@ -554,28 +588,82 @@ F1,10/2026,Marseille,Lille,Clement Turpin,14,15,3,3,2.30,3.10`;
       }
     }
 
-    async function fetchFromMirrors(filename, requireHeader = null) {
-      const order = [
-        preferredMirrorIndex,
-        ...DATA_MIRRORS.map((_, i) => i).filter(i => i !== preferredMirrorIndex)
-      ];
+    async function loadSmartBundle(forceRefresh = false) {
+      if (memBundle && !forceRefresh) {
+        return { data: memBundle, source: memSource };
+      }
 
-      for (const i of order) {
-        const mirror = DATA_MIRRORS[i];
-        const url = mirror.local
-          ? `${mirror.url}/${filename}`
-          : `${mirror.url}/${filename}?t=${Date.now()}`;
-        const res = await fetchWithTimeout(url, mirror.local ? 3000 : 6000);
-        if (res && res.ok) {
-          const txt = (await res.text()).replace(/^\uFEFF/, '').trim();
-          const validHtml = !txt.startsWith('<!DOCTYPE') && !txt.startsWith('<html');
-          if (txt.length > 0 && validHtml && (!requireHeader || txt.includes(requireHeader))) {
-            preferredMirrorIndex = i;
-            return { text: txt, source: mirror.name };
-          }
+      const stored = readLocalCache();
+      const isFresh = stored && (Date.now() - stored.ts < CACHE_TTL_MS);
+      const inCooldown = (Date.now() - lastNetworkFetch < MANUAL_COOLDOWN_MS);
+      if (isFresh && (!forceRefresh || inCooldown)) {
+        memBundle = stored.data;
+        memSource = `${stored.source} [Cached]`;
+        return { data: memBundle, source: memSource };
+      }
+
+      const bucket = getCacheBucket();
+      for (const mirror of DATA_MIRRORS) {
+        const url = mirror.local ? mirror.url : `${mirror.url}?v=${bucket}`;
+        const res = await fetchWithTimeout(url, mirror.local ? 3000 : 7000);
+        if (!res) continue;
+        if (res.status === 429 || res.status === 403) continue;
+
+        if (res.ok) {
+          try {
+            const json = await res.json();
+            if (json && json.leagues) {
+              memBundle = json;
+              memSource = mirror.name;
+              lastNetworkFetch = Date.now();
+              if (!mirror.local) writeLocalCache(json, mirror.name);
+              return { data: json, source: mirror.name };
+            }
+          } catch (e) {}
         }
       }
+
+      if (stored) {
+        memBundle = stored.data;
+        memSource = 'Saved Offline Cache';
+        return { data: memBundle, source: memSource };
+      }
+
       return null;
+    }
+
+    function convertBundleToMatches(bundle, codes) {
+      const out = [];
+      let idx = 0;
+
+      codes.forEach(code => {
+        const rows = (bundle.leagues && bundle.leagues[code]) || [];
+        rows.forEach(r => {
+          const t = computeOddsTension(r[8], r[9]);
+          out.push({
+            idx: idx++, div: code, date: r[0] || '',
+            h: r[1], a: r[2], rf: r[3] || 'League Avg',
+            hf: r[4] != null ? r[4] : NaN,
+            af: r[5] != null ? r[5] : NaN,
+            hy: r[6] != null ? r[6] : NaN,
+            ay: r[7] != null ? r[7] : NaN,
+            close: t.close, closeLbl: t.closeLbl
+          });
+        });
+      });
+
+      (bundle.fixtures || []).forEach(r => {
+        if (!codes.includes(r[0])) return;
+        const t = computeOddsTension(r[5], r[6]);
+        out.push({
+          idx: idx++, div: r[0], date: r[1] || '',
+          h: r[2], a: r[3], rf: r[4] || 'League Avg',
+          hf: NaN, af: NaN, hy: NaN, ay: NaN,
+          close: t.close, closeLbl: t.closeLbl
+        });
+      });
+
+      return out;
     }
 
     function handleMobileFiles(e) {
@@ -597,43 +685,25 @@ F1,10/2026,Marseille,Lille,Clement Turpin,14,15,3,3,2.30,3.10`;
       });
     }
 
-    async function fetchRepoLeague(code) {
+    async function fetchRepoLeague(code, forceRefresh = false) {
       const st = document.getElementById('statusText');
-      st.innerText = `Syncing ${code} data & upcoming fixtures...`;
+      st.innerText = `Loading ${code} analytics...`;
       const codes = code === 'ALL' ? ['SP1', 'E0', 'I1', 'D1', 'F1'] : [code];
 
-      fetchFromMirrors('last_updated.txt').then(tRes => {
-        if (tRes) document.getElementById('lastSyncBadge').innerText = `| Updated: ${tRes.text}`;
-      });
-
-      const leaguePromises = codes.map(c => fetchFromMirrors(`${c}.csv`, 'HomeTeam'));
-      const fixturePromise = fetchFromMirrors('fixtures.csv', 'HomeTeam');
-
-      const [leagueResults, fixtureRes] = await Promise.all([
-        Promise.all(leaguePromises),
-        fixturePromise
-      ]);
-
-      let allMatches = [];
-      let usedSource = '';
-
-      leagueResults.forEach(res => {
-        if (res) {
-          if (!usedSource) usedSource = res.source;
-          allMatches.push(...extractMatchesFromCSV(res.text, null, allMatches.length));
+      const result = await loadSmartBundle(forceRefresh);
+      if (result && result.data) {
+        if (result.data.updated_at) {
+          document.getElementById('lastSyncBadge').innerText = `| Updated: ${result.data.updated_at}`;
         }
-      });
-
-      if (fixtureRes) {
-        allMatches.push(...extractMatchesFromCSV(fixtureRes.text, codes, allMatches.length));
+        const matches = convertBundleToMatches(result.data, codes);
+        if (matches.length > 0) {
+          buildFromMatches(matches, `${result.source} (${code})`);
+          return;
+        }
       }
 
-      if (allMatches.length > 0) {
-        buildFromMatches(allMatches, `${usedSource || 'Live'} (${code})`);
-      } else {
-        const fallbackMatches = extractMatchesFromCSV(FALLBACK_CSV);
-        buildFromMatches(fallbackMatches, `Offline Demo - No ${code}.csv found`);
-      }
+      const fallbackMatches = extractMatchesFromCSV(FALLBACK_CSV);
+      buildFromMatches(fallbackMatches, `Offline Demo (${code})`);
     }
 
     function buildFromMatches(allMatches, sourceLabel) {
@@ -740,7 +810,8 @@ F1,10/2026,Marseille,Lille,Clement Turpin,14,15,3,3,2.30,3.10`;
       db.upcomingList.unshift(customObj);
       document.getElementById('cntUpcoming').innerText = db.upcomingList.length;
       switchViewMode('upcoming');
-      calibrateWithAd(0);
+      const idx = db.list.indexOf(customObj);
+      calibrateWithAd(idx !== -1 ? idx : 0);
     }
 
     function renderTable() {
@@ -858,7 +929,7 @@ F1,10/2026,Marseille,Lille,Clement Turpin,14,15,3,3,2.30,3.10`;
     function resetAllData() {
       document.getElementById('csvFileInput').value = '';
       highlightLeagueBtn('ALL');
-      fetchRepoLeague('ALL');
+      fetchRepoLeague('ALL', true);
     }
 
     function exportPredictions() {
@@ -874,7 +945,7 @@ F1,10/2026,Marseille,Lille,Clement Turpin,14,15,3,3,2.30,3.10`;
 
     window.onload = () => {
       highlightLeagueBtn('ALL');
-      fetchRepoLeague('ALL');
+      fetchRepoLeague('ALL', false);
       triggerAdGate('Loading BET CARD Match Analytics...');
     };
   </script>
