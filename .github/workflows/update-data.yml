@@ -1,0 +1,58 @@
+name: Update Football CSV Data
+
+on:
+  schedule:
+    - cron: '0 6 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  update-data:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Download Latest 26/27 League CSVs & Fixtures
+        run: |
+          mkdir -p data
+          UA="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
+
+          for code in SP1 E0 I1 D1 F1 P1 T1 G1 N1; do
+            echo "Fetching ${code} (26/27)..."
+            curl -fsSL --retry 3 -A "$UA" "https://www.football-data.co.uk/mmz4281/2627/${code}.csv" -o "data/${code}.tmp" || true
+            if [ -s "data/${code}.tmp" ] && grep -q "HomeTeam" "data/${code}.tmp"; then
+              mv "data/${code}.tmp" "data/${code}.csv"
+              echo "Saved 26/27 ${code}.csv"
+            else
+              rm -f "data/${code}.tmp"
+              echo "Fallback to 25/26 for ${code}..."
+              curl -fsSL --retry 2 -A "$UA" "https://www.football-data.co.uk/mmz4281/2526/${code}.csv" -o "data/${code}.tmp" || true
+              if [ -s "data/${code}.tmp" ] && grep -q "HomeTeam" "data/${code}.tmp"; then
+                mv "data/${code}.tmp" "data/${code}.csv"
+              else
+                rm -f "data/${code}.tmp"
+              fi
+            fi
+          done
+
+          echo "Fetching upcoming fixtures..."
+          curl -fsSL --retry 3 -A "$UA" "https://www.football-data.co.uk/fixtures.csv" -o "data/fixtures.tmp" || true
+          if [ -s "data/fixtures.tmp" ] && grep -q "HomeTeam" "data/fixtures.tmp"; then
+            mv "data/fixtures.tmp" "data/fixtures.csv"
+          else
+            rm -f "data/fixtures.tmp"
+          fi
+
+          date -u +"%Y-%m-%d %H:%M UTC" > data/last_updated.txt
+          ls -lh data/
+
+      - name: Commit & Push Updated Data
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add data/
+          git diff --staged --quiet || git commit -m "Auto update football CSV data"
+          git push
