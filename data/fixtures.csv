@@ -1,13 +1,83 @@
 Div,Date,HomeTeam,AwayTeam,Referee,B365H,B365A
-D1,27/11/2026,Werder Bremen,M'gladbach,,0,0
-E0,27/11/2026,Nott'm Forest,Chelsea,,0,0
-F1,27/11/2026,Brest,Paris FC,,0,0
-I1,27/11/2026,Venezia,Bologna,,0,0
-N1,27/11/2026,Groningen,Willem II,,0,0
-P1,27/11/2026,Maritimo,Nacional,,0,0
-SP1,27/11/2026,Levante,Santander,,0,0
-T1,27/11/2026,Alanyaspor,Konyaspor,,0,0
-T1,27/11/2026,Rizespor,Kasimpasa,,0,0
-G1,28/11/2026,Iraklis,Panetolikos,,0,0
-G1,28/11/2026,Kifisia,Kalamata,,0,0
-G1,28/11/2026,Volos NFC,Asteras Tripolis,,0,0
+D1,27/11/2026,Werder Bremen,M'gladbach,,1.65,4.75
+E0,27/11/2026,Nott'm Forest,Chelsea,A Madley,2.4,2.9
+F1,27/11/2026,Brest,Paris FC,,3.4,2.15
+I1,27/11/2026,Venezia,Bologna,,3.1,2.4
+N1,27/11/2026,Groningen,Willem II,,1.3,9.5
+P1,27/11/2026,Maritimo,Nacional,,2.05,3.5
+SP1,27/11/2026,Levante,Santander,,2.0,3.25
+T1,27/11/2026,Alanyaspor,Konyaspor,,2.65,2.65
+T1,27/11/2026,Rizespor,Kasimpasa,,1.86,3.7
+D1,28/11/2026,FC Koln,Elversberg,,2.0,3.5
+D1,28/11/2026,Hamburg,Bayern Munich,,9.0,1.25
+D1,28/11/2026,Mainz,Union Berlin,,1.5,6.0
+D1,28/11/2026,Paderborn,Schalke 04,,2.6,2.75
+D1,28/11/2026,Stuttgart,Ein Frankfurt,,1.83,3.6
+E0,28/11/2026,Ipswich,Aston Villa,M Salisbury,3.6,1.95
+E0,28/11/2026,Leeds,Coventry,P Tierney,1.48,6.5
+E0,28/11/2026,Man United,Brentford,R Jones,2.1,3.25
+F1,28/11/2026,Angers,Lens,,4.75,1.7
+F1,28/11/2026,Le Havre,Strasbourg,,3.25,2.2
+F1,28/11/2026,Le Mans,Lille,,3.7,2.05
+F1,28/11/2026,Nice,Troyes,,1.67,5.0
+F1,28/11/2026,Paris SG,Lorient,,1.2,15.0
+G1,28/11/2026,Iraklis,Panetolikos,,1.76,4.33
+G1,28/11/2026,Kifisia,Kalamata,,1.76,4.5
+G1,28/11/2026,Volos NFC,Asteras Tripolis,,2.5,2.65
+I1,28/11/2026,Frosinone,Parma,,1.44,5.5
+I1,28/11/2026,Inter,Genoa,,1.3,10.0
+I1,28/11/2026,Torino,Lazio,,3.4,2.15
+N1,28/11/2026,Cambuur,Sparta Rotterdam,,2.15,3.1
+N1,28/11/2026,Excelsior,Telstar,,1.95,3.9
+N1,28/11/2026,PSV Eindhoven,Go Ahead Eagles,,1.22,11.0
+P1,28/11/2026,Academico Viseu,Alverca,,2.5,2.75
+P1,28/11/2026,Arouca,Rio Ave,,1.61,5.0
+P1,28/11/2026,Guimaraes,Estrela,,1.62,5.0
+P1,28/11/2026,Moreirense,Santa Clara,,3.1,2.35
+SP1,28/11/2026,Betis,Vallecano,,1.55,5.0
+SP1,28/11/2026,Elche,Ath Madrid,,6.5,1.45
+SP1,28/11/2026,Malaga,Ath Bilbao,,4.75,1.73
+SP1,28/11/2026,Real Madrid,Alaves,,1.13,17.0
+T1,28/11/2026,Gaziantep,Amedspor,,3.4,1.9
+T1,28/11/2026,Samsunspor,Genclerbirligi,,1.79,3.9
+D1,29/11/2026,Dortmund,Leverkusen,,2.1,3.0
+D1,29/11/2026,Freiburg,RB Leipzig,,2.7,2.38
+D1,29/11/2026,Hoffenheim,Augsburg,,1.73,4.0
+E0,29/11/2026,Arsenal,Man City,J Brooks,2.0,3.7
+E0,29/11/2026,Brighton,Newcastle,S Hooper,1.57,5.25
+E0,29/11/2026,Crystal Palace,Hull,J Gillett,1.9,3.9
+E0,29/11/2026,Everton,Liverpool,M Oliver,4.5,1.75
+E0,29/11/2026,Fulham,Bournemouth,S Attwell,2.8,2.5
+E0,29/11/2026,Sunderland,Tottenham,P Bankes,3.75,2.0
+F1,29/11/2026,Auxerre,Marseille,,3.6,1.95
+F1,29/11/2026,Lyon,Monaco,,2.3,3.0
+F1,29/11/2026,Toulouse,Rennes,,2.55,2.6
+G1,29/11/2026,AEK,PAOK,,1.71,4.2
+G1,29/11/2026,Aris,Olympiakos,,4.33,1.76
+G1,29/11/2026,Atromitos,Panathinaikos,,7.5,1.37
+G1,29/11/2026,OFI Crete,Levadeiakos,,1.96,3.8
+I1,29/11/2026,Como,Juventus,,1.91,4.0
+I1,29/11/2026,Roma,Monza,,1.18,15.0
+I1,29/11/2026,Sassuolo,Napoli,,4.75,1.67
+I1,29/11/2026,Udinese,Fiorentina,,3.1,2.25
+N1,29/11/2026,Den Haag,Utrecht,,2.7,2.4
+N1,29/11/2026,Feyenoord,Ajax,,2.15,2.8
+N1,29/11/2026,For Sittard,Heerenveen,,4.0,1.91
+N1,29/11/2026,Nijmegen,Twente,,3.9,1.91
+N1,29/11/2026,Zwolle,AZ Alkmaar,,5.5,1.55
+P1,29/11/2026,Gil Vicente,Estoril,,1.76,4.33
+P1,29/11/2026,Porto,Sp Lisbon,,1.86,3.9
+SP1,29/11/2026,Celta,Villarreal,,2.8,2.5
+SP1,29/11/2026,La Coruna,Barcelona,,11.0,1.2
+SP1,29/11/2026,Sociedad,Sevilla,,2.1,3.25
+SP1,29/11/2026,Valencia,Osasuna,,2.1,3.7
+T1,29/11/2026,Corum,Kocaelispor,,1.81,3.9
+T1,29/11/2026,Eyupspor,Buyuksehyr,,6.25,1.41
+T1,29/11/2026,Fenerbahce,Erzurumspor,,1.22,10.0
+I1,30/11/2026,Cagliari,Milan,,5.0,1.7
+I1,30/11/2026,Lecce,Atalanta,,4.2,1.85
+P1,30/11/2026,Benfica,Famalicao,,1.15,13.0
+P1,30/11/2026,Casa Pia,Sp Braga,,7.0,1.45
+SP1,30/11/2026,Espanol,Getafe,,2.05,4.0
+T1,30/11/2026,Besiktas,Galatasaray,,2.0,2.87
+T1,30/11/2026,Goztep,Trabzonspor,,3.1,2.0
